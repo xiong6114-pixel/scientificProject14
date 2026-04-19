@@ -1,0 +1,3 @@
+archive,algorithm,hv,nd_count,coverage_vs_mobka,coverage_vs_nsga2,coverage_vs_nsga3,coverage_vs_moead,covered_by_nsga2,covered_by_nsga3,covered_by_moead
+100,IMOGABKA-seed,95684121926.381058,97,,,,,,,
+300,IMOGABKA-seed,95690246656.005951,271,,,,,,,
