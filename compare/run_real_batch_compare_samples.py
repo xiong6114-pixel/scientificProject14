@@ -16,6 +16,7 @@ if str(ROOT_PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_PROJECT_DIR))
 
 from coverage import Coverage
+from hnsga2_kmeans_typed import HNSGA2_KMeans_funciton
 from hv import HV
 from imobka_matlab_aligned import IMOBKA_funciton
 from mogabka_seeded import MOGABKA
@@ -94,6 +95,13 @@ def _safe_coverage(front_a: np.ndarray, front_b: np.ndarray) -> float:
     if front_a.size == 0 or front_b.size == 0:
         return 0.0
     return float(Coverage(front_b, front_a))
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _front_snapshot(front: np.ndarray) -> dict[str, float]:
@@ -196,6 +204,17 @@ def _run_single_sample(
         )
     front_imogabka_seed = np.asarray(result.get("archive_pf_fitness", ture_pf), dtype=float)
     runs.append(("IMOGABKA-seed", front_imogabka_seed, time.perf_counter() - t0))
+
+    t0 = time.perf_counter()
+    hnsga_settings = dict(baseline_settings)
+    hnsga_settings["force_kmeans_initial"] = not _env_flag("HNSGA_USE_SHARED_INIT", False)
+    hnsga_settings["kmeans_seed_count"] = int(os.environ.get("HNSGA_KMEANS_SEED_COUNT", max(4, min(12, popnum // 3))))
+    front_hnsga2_kmeans, _ = HNSGA2_KMeans_funciton(
+        settings=hnsga_settings,
+        rng=np.random.RandomState(base_seed),
+        return_trace=True,
+    )
+    runs.append(("HNSGA2-KMeans", np.asarray(front_hnsga2_kmeans, dtype=float), time.perf_counter() - t0))
 
     t0 = time.perf_counter()
     front_mobka, _ = IMOBKA_funciton(
@@ -316,7 +335,7 @@ def _aggregate_by_algorithm(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _build_hv_pivot(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sample_map: dict[int, dict[str, Any]] = {}
-    algo_order = ["IMOGABKA-seed", "MOBKA", "NSGA2", "NSGA3", "MOEAD"]
+    algo_order = ["IMOGABKA-seed", "HNSGA2-KMeans", "MOBKA", "NSGA2", "NSGA3", "MOEAD"]
     for row in rows:
         sample_idx = int(row["sample_idx"])
         item = sample_map.setdefault(
@@ -456,11 +475,13 @@ def main() -> None:
         "cell_lon_center",
         "cell_lat_center",
         "hv_IMOGABKA-seed",
+        "hv_HNSGA2-KMeans",
         "hv_MOBKA",
         "hv_NSGA2",
         "hv_NSGA3",
         "hv_MOEAD",
         "nd_IMOGABKA-seed",
+        "nd_HNSGA2-KMeans",
         "nd_MOBKA",
         "nd_NSGA2",
         "nd_NSGA3",

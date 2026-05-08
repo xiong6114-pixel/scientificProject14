@@ -7,7 +7,7 @@ This note keeps the old MATLAB-aligned compare sandbox intact while marking the 
 | compare file | 50-point main-chain file | note |
 | --- | --- | --- |
 | `runme.py` | `../run_ev_typed_mogabka_seeded.py`, `../mogabka_seeded.py`, `../get_mofcn.py` | `compare/runme.py` now runs the new 50-point typed multi-algorithm compare entry. |
-| `runme_50_typed_compare.py` | `../run_ev_typed_mogabka_seeded.py`, `../mogabka_seeded.py` | New compare-side typed runner for `MOGABKA + NSGA-II + NSGA-III + MOEA/D`. |
+| `runme_50_typed_compare.py` | `../run_ev_typed_mogabka_seeded.py`, `../mogabka_seeded.py` | New compare-side typed runner for `MOGABKA + HNSGA-II+KMeans + NSGA-II + NSGA-III + MOEA/D`. |
 | `runme_50_typed_seeded.py` | `../run me.py` and `../run_ev_typed_mogabka_seeded.py` | New compare-side shim for the current typed-seeded pipeline. |
 | `runme_matlab_aligned.py` | `../run_ev_typed_mogabka_seeded.py` | Legacy compare entry for old MATLAB-aligned multi-algorithm experiments. |
 
@@ -39,6 +39,7 @@ This note keeps the old MATLAB-aligned compare sandbox intact while marking the 
 
 These compare files now have a typed branch that activates when settings include `_typed_problem`:
 
+- `hnsga2_kmeans_typed.py`
 - `nsga2_matlab_aligned.py`
 - `nsga3_matlab_aligned.py`
 - `moead_matlab_aligned.py`
@@ -49,6 +50,8 @@ That typed branch uses:
 - 50-point runtime loading through the current checkpoint/sample path
 - typed `3*M` decision vectors
 - shared typed initialization and typed mutation/crossover
+
+`hnsga2_kmeans_typed.py` is the HNSGA-II + K-Means paper baseline. By default it keeps K-Means demand-aware initialization even when the other baselines share a random initial population. Set `HNSGA_USE_SHARED_INIT=1` to force the same shared initialization for ablation, and set `HNSGA_KMEANS_SEED_COUNT` to tune how many K-Means seeds enter its initial population.
 
 The original MATLAB-aligned branch still exists for old regression tests.
 

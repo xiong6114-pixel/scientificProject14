@@ -14,6 +14,7 @@ if str(ROOT_PROJECT_DIR) not in sys.path:
 
 from coverage import Coverage
 from gd import GD
+from hnsga2_kmeans_typed import HNSGA2_KMeans_funciton
 from hv import HV
 from igd import IGD
 from mogabka_seeded import MOGABKA
@@ -72,6 +73,13 @@ def _plot_front(ax, front: np.ndarray, label: str, marker: str) -> None:
     if front.size == 0:
         return
     ax.scatter(front[:, 0], front[:, 1], s=26, label=label, marker=marker)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalize_mode(mode: str) -> str:
@@ -198,6 +206,7 @@ def _write_mode_outputs(
 
     fig1, ax1 = plt.subplots(figsize=(8, 6))
     _plot_front(ax1, fronts["mogabka"], "MOGABKA", "o")
+    _plot_front(ax1, fronts["hnsga2_kmeans"], "HNSGA-II+KMeans", "D")
     _plot_front(ax1, fronts["nsga2"], "NSGA-II", "s")
     _plot_front(ax1, fronts["nsga3"], "NSGA-III", "^")
     _plot_front(ax1, fronts["moead"], "MOEA/D", "x")
@@ -263,6 +272,16 @@ def _run_one_mode(
     )
     front_mogabka = mogabka_out["front"]
 
+    print("running HNSGA-II + K-Means...", flush=True)
+    hnsga_settings = dict(shared_settings)
+    hnsga_settings["force_kmeans_initial"] = not _env_flag("HNSGA_USE_SHARED_INIT", False)
+    hnsga_settings["kmeans_seed_count"] = int(os.environ.get("HNSGA_KMEANS_SEED_COUNT", max(4, min(12, popnum // 3))))
+    front_hnsga2_kmeans, trace_hnsga2_kmeans = HNSGA2_KMeans_funciton(
+        settings=hnsga_settings,
+        rng=np.random.RandomState(base_seed),
+        return_trace=True,
+    )
+
     print("running NSGA-II...", flush=True)
     front_nsga2, trace_nsga2 = NSGA2_funciton(
         settings=dict(shared_settings),
@@ -285,25 +304,27 @@ def _run_one_mode(
     )
 
     reference_pf = merge_fronts_and_extract_reference(
-        [front_mogabka, front_nsga2, front_nsga3, front_moead],
+        [front_mogabka, front_hnsga2_kmeans, front_nsga2, front_nsga3, front_moead],
         invalid_penalty=problem.invalid_penalty,
     )
 
-    labels = ["MOGABKA", "NSGA2", "NSGA3", "MOEAD"]
+    labels = ["MOGABKA", "HNSGA2-KMeans", "NSGA2", "NSGA3", "MOEAD"]
     fronts = {
         "mogabka": front_mogabka,
+        "hnsga2_kmeans": front_hnsga2_kmeans,
         "nsga2": front_nsga2,
         "nsga3": front_nsga3,
         "moead": front_moead,
     }
     traces = {
+        "hnsga2_kmeans": trace_hnsga2_kmeans.generation_metrics,
         "nsga2": trace_nsga2.generation_metrics,
         "nsga3": trace_nsga3.generation_metrics,
         "moead": trace_moead.generation_metrics,
     }
 
     metrics_rows = []
-    ordered_fronts = [front_mogabka, front_nsga2, front_nsga3, front_moead]
+    ordered_fronts = [front_mogabka, front_hnsga2_kmeans, front_nsga2, front_nsga3, front_moead]
     for label, front in zip(labels, ordered_fronts):
         metrics_rows.append(
             [
