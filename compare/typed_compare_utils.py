@@ -31,6 +31,7 @@ from run_ev_typed_mogabka_seeded import DEFAULT_CKPT_PATH, _load_runtime_inputs
 class TypedCompareProblem:
     source_desc: str
     ckpt_path: Path
+    checkpoint_available: bool
     demand_points_info: np.ndarray
     charge_points_info: np.ndarray
     x_raw_flat: np.ndarray
@@ -52,11 +53,14 @@ def build_typed_compare_problem(
     stochastic_split: bool = False,
 ) -> TypedCompareProblem:
     ckpt_path = Path(os.environ.get("CKPT_PATH", str(DEFAULT_CKPT_PATH)))
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-
-    expected_points = int(ckpt["n_points"])
-    feat_dim = int(ckpt["feat_dim"])
-    expected_in_dim = int(ckpt.get("in_dim", expected_points * feat_dim))
+    ckpt = None
+    expected_points = None
+    expected_in_dim = None
+    if ckpt_path.is_file():
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        expected_points = int(ckpt["n_points"])
+        feat_dim = int(ckpt["feat_dim"])
+        expected_in_dim = int(ckpt.get("in_dim", expected_points * feat_dim))
 
     demand_points_info, charge_points_info, x_raw_flat, source_desc = _load_runtime_inputs(
         expected_points=expected_points,
@@ -92,21 +96,23 @@ def build_typed_compare_problem(
         debug_metrics=False,
     )
 
-    decode_cfg = SeedDecodeConfig(
-        num_seeds=12,
-        count_radius=2,
-        top_margin=4,
-        stochastic_ratio=0.75,
-        priority_temperature=1.0,
-        capacity_temperature=1.0,
-        min_k=1,
-        max_k=m,
-    )
-    seed_builder = make_pcc_seed_builder(
-        ckpt_path=str(ckpt_path),
-        decode_cfg=decode_cfg,
-        device=seed_device,
-    )
+    seed_builder = None
+    if ckpt is not None:
+        decode_cfg = SeedDecodeConfig(
+            num_seeds=12,
+            count_radius=2,
+            top_margin=4,
+            stochastic_ratio=0.75,
+            priority_temperature=1.0,
+            capacity_temperature=1.0,
+            min_k=1,
+            max_k=m,
+        )
+        seed_builder = make_pcc_seed_builder(
+            ckpt_path=str(ckpt_path),
+            decode_cfg=decode_cfg,
+            device=seed_device,
+        )
 
     ub_vec = np.concatenate(
         [
@@ -120,6 +126,7 @@ def build_typed_compare_problem(
     return TypedCompareProblem(
         source_desc=source_desc,
         ckpt_path=ckpt_path,
+        checkpoint_available=ckpt is not None,
         demand_points_info=np.asarray(demand_points_info, dtype=float),
         charge_points_info=np.asarray(charge_points_info, dtype=float),
         x_raw_flat=np.asarray(x_raw_flat, dtype=np.float32),
@@ -148,11 +155,12 @@ def build_mogabka_seed_config(
     problem: TypedCompareProblem,
     init_nn_seed_count: int,
 ) -> dict:
+    enabled = problem.seed_builder is not None and int(init_nn_seed_count) > 0
     return {
-        "enabled": True,
-        "init_enabled": True,
-        "init_nn_seed_count": int(init_nn_seed_count),
-        "builder_fn": problem.seed_builder,
+        "enabled": enabled,
+        "init_enabled": enabled,
+        "init_nn_seed_count": int(init_nn_seed_count) if enabled else 0,
+        "builder_fn": problem.seed_builder if enabled else None,
         "reinject_enabled": False,
         "reinject_generations": (20, 60),
         "reinject_count": 4,

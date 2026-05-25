@@ -12,17 +12,35 @@ env/
 *.log
 *.err
 *.pt
+*.xlsx
+~$*.xlsx
 
 archive_*.csv
 final_*.csv
 train_summary_*.json
 representative_solutions_typed.json
 
+charging-station-location-with-metaheuristic-chargingstation/
+
 compare/.pytest_cache/
 compare/__pycache__/
 compare/tests/_tmp_*/
 compare/zdt_nnseed_ckpts/
 compare/**/*.png
+compare/*.csv
+compare/py_runme*.csv
+compare/real_batch*.csv
+compare/real_compare*.csv
+compare/nnseed*.csv
+compare/zdt*.csv
+compare/tmp_*.csv
+compare/sample_*_metrics*.csv
+compare/sample_*_hv_curve*.csv
+compare/sample_*_init_metrics.md
+compare/sample_*_single_factor_results.md
+compare/sample_*_rerun_paper_settings.md
+compare/sample_*_summary.md
+compare/sample_*_overview.md
 
 sample_1286_nnseed_layouts/*.png
 

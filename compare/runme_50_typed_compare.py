@@ -117,7 +117,8 @@ def _mode_description(mode: str) -> str:
 
 def _build_shared_initial_for_mode(problem, mode: str, popnum: int, init_nn_seed_count: int, base_seed: int):
     rng_init = np.random.RandomState(base_seed)
-    shared_seed_count = 0 if mode in (MODE_ALL_RANDOM, MODE_MOBKA_ONLY_SEEDED) else init_nn_seed_count
+    has_seed_builder = getattr(problem, "seed_builder", None) is not None
+    shared_seed_count = 0 if mode in (MODE_ALL_RANDOM, MODE_MOBKA_ONLY_SEEDED) or not has_seed_builder else init_nn_seed_count
     shared_pop, shared_obj = build_typed_initial_population(
         problem=problem,
         pop_size=popnum,
@@ -409,7 +410,10 @@ def main() -> None:
     print("building typed compare problem...", flush=True)
     problem = build_typed_compare_problem(seed_device=seed_device)
     print(f"runtime source: {problem.source_desc}")
-    print(f"checkpoint: {problem.ckpt_path.name}")
+    if problem.checkpoint_available:
+        print(f"checkpoint: {problem.ckpt_path.name}")
+    else:
+        print(f"checkpoint: none; NN seed initialization is disabled")
     print(f"parameter: {problem.parameter.tolist()}")
     print(f"popnum={popnum}, max_iter={max_iter}, init_nn_seed_count={init_nn_seed_count}, mode={mode}")
 

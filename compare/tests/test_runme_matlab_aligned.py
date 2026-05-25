@@ -9,15 +9,15 @@ from runme_matlab_aligned import run_runme_matlab_aligned
 
 
 def test_runme_matlab_aligned_smoke() -> None:
-    root = Path(__file__).resolve().parents[3]
+    fixture_dir = Path(__file__).resolve().parent / "fixtures"
     out_dir = Path(__file__).resolve().parent / "_tmp_runme"
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     settings = {
-        "data1": str(root / "demand_points_info_10.csv"),
-        "data2": str(root / "charge_points_info_10.csv"),
+        "data1": str(fixture_dir / "demand_points_info_10.csv"),
+        "data2": str(fixture_dir / "charge_points_info_10.csv"),
         "maxgen": 2,
         "popnum": 8,
     }

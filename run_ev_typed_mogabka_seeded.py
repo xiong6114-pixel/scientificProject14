@@ -86,7 +86,7 @@ def _load_runtime_from_csv(demand_path: Path, charge_path: Path, x_path: Path):
     )
 
 
-def _load_runtime_inputs(expected_points: int, expected_in_dim: int):
+def _load_runtime_inputs(expected_points: int | None, expected_in_dim: int | None):
     debug_mat_path = Path(os.environ.get("RUNTIME_DEBUG_MAT_PATH", str(DEFAULT_DEBUG_MAT_PATH)))
     sample_idx = int(os.environ.get("RUNTIME_SAMPLE_INDEX", "0"))
 
@@ -110,11 +110,11 @@ def _load_runtime_inputs(expected_points: int, expected_in_dim: int):
     if charge_points_info.ndim != 2 or charge_points_info.shape[1] != 3:
         raise ValueError(f"charge_points_info should be [M,3], got {charge_points_info.shape}")
 
-    if charge_points_info.shape[0] != expected_points:
+    if expected_points is not None and charge_points_info.shape[0] != expected_points:
         raise ValueError(
             f"Charge point count {charge_points_info.shape[0]} does not match checkpoint n_points={expected_points}"
         )
-    if x_raw_flat.size != expected_in_dim:
+    if expected_in_dim is not None and x_raw_flat.size != expected_in_dim:
         raise ValueError(
             f"x_raw_flat length {x_raw_flat.size} does not match checkpoint in_dim={expected_in_dim}"
         )
@@ -166,26 +166,38 @@ def main():
     except Exception:
         pass
 
-    ckpt_path = Path(os.environ.get("CKPT_PATH", str(DEFAULT_CKPT_PATH)))
-    if not ckpt_path.is_file():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
-
     seed_device = os.environ.get("SEED_DEVICE", "cpu")
     max_iter = int(os.environ.get("MAX_ITER", "50"))
     search_agents_no = int(os.environ.get("SEARCH_AGENTS_NO", "50"))
     init_nn_seed_count = int(os.environ.get("INIT_NN_SEED_COUNT", "12"))
 
-    print("loading checkpoint...", flush=True)
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    expected_points = int(ckpt["n_points"])
-    feat_dim = int(ckpt["feat_dim"])
-    expected_in_dim = int(ckpt.get("in_dim", expected_points * feat_dim))
+    ckpt_path = Path(os.environ.get("CKPT_PATH", str(DEFAULT_CKPT_PATH)))
+    ckpt = None
+    expected_points = None
+    feat_dim = None
+    expected_in_dim = None
+    if ckpt_path.is_file():
+        print("loading checkpoint...", flush=True)
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        expected_points = int(ckpt["n_points"])
+        feat_dim = int(ckpt["feat_dim"])
+        expected_in_dim = int(ckpt.get("in_dim", expected_points * feat_dim))
+    elif init_nn_seed_count > 0:
+        raise FileNotFoundError(
+            f"Checkpoint not found: {ckpt_path}. Set INIT_NN_SEED_COUNT=0 for a random-init run, "
+            "or set CKPT_PATH to a trained checkpoint."
+        )
+    else:
+        print("checkpoint not found; running without NN seed injection.", flush=True)
 
     print("loading runtime sample...", flush=True)
     demand_points_info, charge_points_info, x_raw_flat, source_desc = _load_runtime_inputs(
         expected_points=expected_points,
         expected_in_dim=expected_in_dim,
     )
+    if expected_points is None:
+        expected_points = int(charge_points_info.shape[0])
+        feat_dim = int(x_raw_flat.size // expected_points) if expected_points > 0 and x_raw_flat.size % expected_points == 0 else int(x_raw_flat.size)
 
     print("building typed context...", flush=True)
     parameter = get_parameter()
@@ -216,32 +228,43 @@ def main():
 
     set_ev_context(problem_context)
 
-    decode_cfg = SeedDecodeConfig(
-        num_seeds=init_nn_seed_count,
-        count_radius=2,
-        top_margin=4,
-        stochastic_ratio=0.75,
-        priority_temperature=1.0,
-        capacity_temperature=1.0,
-        min_k=1,
-        max_k=M,
-    )
+    if ckpt is not None and init_nn_seed_count > 0:
+        decode_cfg = SeedDecodeConfig(
+            num_seeds=init_nn_seed_count,
+            count_radius=2,
+            top_margin=4,
+            stochastic_ratio=0.75,
+            priority_temperature=1.0,
+            capacity_temperature=1.0,
+            min_k=1,
+            max_k=M,
+        )
 
-    seed_builder = make_pcc_seed_builder(
-        ckpt_path=str(ckpt_path),
-        decode_cfg=decode_cfg,
-        device=seed_device,
-    )
-
-    seed_cfg = {
-        "enabled": True,
-        "init_enabled": True,
-        "init_nn_seed_count": init_nn_seed_count,
-        "builder_fn": seed_builder,
-        "reinject_enabled": False,
-        "reinject_generations": (20, 60),
-        "reinject_count": 4,
-    }
+        seed_builder = make_pcc_seed_builder(
+            ckpt_path=str(ckpt_path),
+            decode_cfg=decode_cfg,
+            device=seed_device,
+        )
+        seed_cfg = {
+            "enabled": True,
+            "init_enabled": True,
+            "init_nn_seed_count": init_nn_seed_count,
+            "builder_fn": seed_builder,
+            "reinject_enabled": False,
+            "reinject_generations": (20, 60),
+            "reinject_count": 4,
+        }
+    else:
+        init_nn_seed_count = 0
+        seed_cfg = {
+            "enabled": False,
+            "init_enabled": False,
+            "init_nn_seed_count": 0,
+            "builder_fn": None,
+            "reinject_enabled": False,
+            "reinject_generations": (20, 60),
+            "reinject_count": 0,
+        }
 
     ub_vec = np.concatenate(
         [
@@ -252,10 +275,10 @@ def main():
     )
 
     print(f"runtime source: {source_desc}")
-    print(f"checkpoint: {ckpt_path.name}")
+    print(f"checkpoint: {ckpt_path.name if ckpt is not None else 'none'}")
     print(f"n_points={expected_points}, feat_dim={feat_dim}, x_raw_dim={x_raw_flat.size}")
     print(f"demand_points={demand_points_info.shape[0]}, charge_points={charge_points_info.shape[0]}")
-    print(f"level_to_piles={ckpt.get('level_to_piles', None)}")
+    print(f"level_to_piles={ckpt.get('level_to_piles', None) if ckpt is not None else None}")
     print(f"parameter={parameter.tolist()}")
     print(f"seed_device={seed_device}, torch_threads={torch_threads}")
     print(f"max_iter={max_iter}, search_agents_no={search_agents_no}, init_nn_seed_count={init_nn_seed_count}")
@@ -320,9 +343,9 @@ def main():
 
     rep_payload = {
         "runtime_source": source_desc,
-        "checkpoint": ckpt_path.name,
+        "checkpoint": ckpt_path.name if ckpt is not None else None,
         "parameter": parameter.tolist(),
-        "level_to_piles": ckpt.get("level_to_piles", None),
+        "level_to_piles": ckpt.get("level_to_piles", None) if ckpt is not None else None,
         "representatives": rep_summary,
     }
     with open(PROJECT_DIR / "representative_solutions_typed.json", "w", encoding="utf-8") as f:

@@ -62,6 +62,7 @@ def MOGABKA(
     invalid_penalty = float(problem_context.get("invalid_penalty", 1e12))
     debug_seed = bool(problem_context.get("debug_seed_injection", False))
     debug_metrics = bool(problem_context.get("debug_metrics", False))
+    collect_history = bool(problem_context.get("collect_history", False))
 
     Iter = 1
     variate_rate = float(problem_context.get("variate_rate", os.environ.get("VARIATE_RATE", "0.3")))
@@ -78,6 +79,9 @@ def MOGABKA(
         "Spread": np.zeros(max_iter, dtype=float),
         "Coverage": np.zeros(max_iter, dtype=float),
     }
+    if collect_history:
+        Result["archive_pf_fitness_history"] = []
+        Result["archive_pf_pop_history"] = []
 
     Fitness = np.empty((0, num_obj), dtype=float)
     POP = np.empty((0, dim), dtype=float)
@@ -147,6 +151,16 @@ def MOGABKA(
                 ub_vec,
                 integer_encoding=integer_encoding,
             )
+            initial_fit, _, _ = getMOFcn(FUN, POP, num_obj)
+            initial_pf_pop, initial_pf_fit = _extract_feasible_first_front_archive(
+                archive=POP,
+                archive_fit=initial_fit,
+                invalid_penalty=invalid_penalty,
+            )
+            Result["initial_population"] = POP.copy()
+            Result["initial_population_fitness"] = initial_fit.copy()
+            Result["initial_pf_pop"] = initial_pf_pop.copy()
+            Result["initial_pf_fitness"] = initial_pf_fit.copy()
             POP_old = POP.copy()
 
         bip = np.random.randint(1, search_agents_no + 1)
@@ -283,6 +297,11 @@ def MOGABKA(
         )
 
         Fitness, _, archive_pf = getMOFcn(FUN, archive, num_obj)
+        archive_pf_pop, archive_pf_fit = _extract_feasible_first_front_archive(
+            archive=archive,
+            archive_fit=Fitness,
+            invalid_penalty=invalid_penalty,
+        )
         if turePF.shape[0] == 0 and archive_pf.shape[0] > 0:
             turePF = archive_pf
 
@@ -305,6 +324,9 @@ def MOGABKA(
             )
         else:
             print(Iter)
+        if collect_history:
+            Result["archive_pf_fitness_history"].append(np.asarray(archive_pf_fit, dtype=float).copy())
+            Result["archive_pf_pop_history"].append(np.asarray(archive_pf_pop, dtype=float).copy())
         Iter += 1
 
     archive_fit = Fitness.copy()
